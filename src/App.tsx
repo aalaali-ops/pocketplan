@@ -251,20 +251,46 @@ function SaveIndicator({ state, error, onRetry }: { state: SaveState; error: str
 }
 
 function LoginScreen() {
+  const [mode, setMode] = useState<'signin' | 'secure'>('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
+  const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!supabase) return
     setBusy(true)
     setMessage('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setMessage(error.message)
+    setSent(false)
+    if (mode === 'signin') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) setMessage(error.message)
+    } else {
+      const emailRedirectTo = new URL(import.meta.env.BASE_URL, window.location.origin).toString()
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo, data: { pocketplan_recovery: true } },
+      })
+      if (error) setMessage(error.message)
+      else if (data.session) {
+        setMessage('Account created and signed in. Your browser will remember this session.')
+        setSent(true)
+      } else {
+        setMessage('Verification email sent. Open the link in that email on this device, then return to PocketPlan.')
+        setSent(true)
+      }
+    }
     setBusy(false)
   }
-  return <div className="auth-page"><div className="auth-card"><div className="brand auth-brand"><div className="brand-mark"><WalletCards/></div><span>PocketPlan</span></div><h1>Welcome back</h1><p>Sign in only when this browser no longer has your saved session.</p><form onSubmit={submit}><label>Email<input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)}/></label><label>Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)}/></label>{message && <div className="auth-message">{message}</div>}<button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form></div></div>
+  const switchMode = () => {
+    setMode(current => current === 'signin' ? 'secure' : 'signin')
+    setMessage('')
+    setSent(false)
+    setPassword('')
+  }
+  return <div className="auth-page"><div className="auth-card"><div className="brand auth-brand"><div className="brand-mark"><WalletCards/></div><span>PocketPlan</span></div><h1>{mode === 'signin' ? 'Welcome back' : 'Secure my existing budget'}</h1><p>{mode === 'signin' ? 'Sign in with your permanent PocketPlan account.' : 'Create a permanent account. We will connect your existing July and August budgets after you verify your email.'}</p><form onSubmit={submit}><label>Email<input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)}/></label><label>Password<input required minLength={8} type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={password} onChange={event => setPassword(event.target.value)} placeholder={mode === 'secure' ? 'At least 8 characters' : undefined}/></label>{mode === 'secure' && <p className="account-note">Use an email you can open on this phone. Your password stays private and is handled securely by Supabase.</p>}{message && <div className={`auth-message${sent ? ' account-message' : ''}`}>{message}</div>}<button className="primary" disabled={busy || sent}>{busy ? (mode === 'signin' ? 'Signing in…' : 'Sending…') : sent ? 'Check your email' : mode === 'signin' ? 'Sign in' : 'Create account & send link'}</button></form><button className="auth-switch" type="button" onClick={switchMode}>{mode === 'signin' ? 'First time here? Secure my existing budget' : 'Already created an account? Sign in'}</button></div></div>
 }
 
 function AccountModal({ session, onClose }: { session: Session; onClose: () => void }) {
