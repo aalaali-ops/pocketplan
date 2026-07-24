@@ -34,6 +34,7 @@ function App() {
   const [modal, setModal] = useState<'budget' | 'expense' | null>(null)
   const [editingBudget, setEditingBudget] = useState<Allocation | null>(null)
   const [deletingBudget, setDeletingBudget] = useState<Allocation | null>(null)
+  const [accountOpen, setAccountOpen] = useState(false)
   const migrationRef = useRef<Promise<void> | null>(null)
 
   const monthKey = format(month, 'yyyy-MM')
@@ -44,24 +45,19 @@ function App() {
     const client = supabase
     const openSession = async () => {
       const { data } = await client.auth.getSession()
-      if (data.session) {
-        setSession(data.session)
-        setAuthLoading(false)
-        return
-      }
-      const { data: anonymous, error } = await client.auth.signInAnonymously()
-      if (error) {
-        setSaveError(error.message)
-        setAuthLoading(false)
-        return
-      }
-      setSession(anonymous.session)
+      setSession(data.session)
       setAuthLoading(false)
     }
     openSession()
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => { setSession(nextSession); setAuthLoading(false) })
     return () => data.subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!session) return
+    const passwordPending = localStorage.getItem('pocketplan-password-pending')
+    if (session.user.is_anonymous || (passwordPending && session.user.email === passwordPending)) setAccountOpen(true)
+  }, [session])
 
   const migrateLocalDrafts = async (userId: string) => {
     const migrationKey = `pocketplan-cloud-migrated:${userId}`
@@ -197,7 +193,7 @@ function App() {
 
   if (authLoading) return <div className="app-loading"><div className="brand-mark"><WalletCards/></div><p>Opening PocketPlan…</p></div>
   if (!isSupabaseConfigured || !supabase) return <div className="app-loading"><p>Supabase is not configured.</p></div>
-  if (!session) return <div className="app-loading"><p>{saveError || 'Could not open PocketPlan.'}</p></div>
+  if (!session) return <LoginScreen/>
 
   return (
     <div className="app-shell">
@@ -210,7 +206,7 @@ function App() {
           <NavButton icon={<BarChart3/>} label="Insights" active={tab === 'insights'} onClick={() => setTab('insights')}/>
         </nav>
         <div className="side-tip"><Sparkles size={18}/><div><b>Small steps add up</b><span>You saved 22% more than last month.</span></div></div>
-        <div className="settings"><Settings size={19}/> PocketPlan</div>
+        <button className="settings" onClick={() => setAccountOpen(true)}><Settings size={19}/> Account</button>
       </aside>
 
       <main>
@@ -242,6 +238,7 @@ function App() {
       {modal === 'budget' && <BudgetModal item={editingBudget} onClose={() => { setModal(null); setEditingBudget(null) }} onSave={saveBudgetItem}/>} 
       {modal === 'expense' && <ExpenseModal onClose={() => setModal(null)} onSave={saveNewExpense}/>} 
       {deletingBudget && <ConfirmDelete item={deletingBudget} onClose={() => setDeletingBudget(null)} onConfirm={deleteBudgetItem}/>} 
+      {accountOpen && <AccountModal session={session} onClose={() => setAccountOpen(false)}/>}
     </div>
   )
 }
@@ -251,6 +248,68 @@ function SaveIndicator({ state, error, onRetry }: { state: SaveState; error: str
   if (state === 'error') return <span className="save-indicator error" title={error}><X/> Not saved{onRetry && <button onClick={onRetry}>Retry</button>}</span>
   if (state === 'saved') return <span className="save-indicator saved"><CircleCheck/> Saved to cloud</span>
   return null
+}
+
+function LoginScreen() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!supabase) return
+    setBusy(true)
+    setMessage('')
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) setMessage(error.message)
+    setBusy(false)
+  }
+  return <div className="auth-page"><div className="auth-card"><div className="brand auth-brand"><div className="brand-mark"><WalletCards/></div><span>PocketPlan</span></div><h1>Welcome back</h1><p>Sign in only when this browser no longer has your saved session.</p><form onSubmit={submit}><label>Email<input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)}/></label><label>Password<input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)}/></label>{message && <div className="auth-message">{message}</div>}<button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form></div></div>
+}
+
+function AccountModal({ session, onClose }: { session: Session; onClose: () => void }) {
+  const isAnonymous = Boolean(session.user.is_anonymous)
+  const needsPassword = !isAnonymous && localStorage.getItem('pocketplan-password-pending') === session.user.email
+  const [email, setEmail] = useState(session.user.email || '')
+  const [password, setPassword] = useState('')
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const secureEmail = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!supabase) return
+    setBusy(true)
+    setMessage('')
+    const redirect = `${window.location.origin}/pocketplan/`
+    const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: redirect })
+    if (error) setMessage(error.message)
+    else {
+      localStorage.setItem('pocketplan-password-pending', email)
+      setMessage('Verification email sent. Open its link on this device, then return to PocketPlan to set your password.')
+    }
+    setBusy(false)
+  }
+
+  const savePassword = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!supabase) return
+    setBusy(true)
+    setMessage('')
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) setMessage(error.message)
+    else {
+      localStorage.removeItem('pocketplan-password-pending')
+      setPassword('')
+      setMessage('Account secured. This browser will stay signed in.')
+    }
+    setBusy(false)
+  }
+
+  if (isAnonymous) return <ModalFrame title="Protect your PocketPlan" subtitle="Add an email now without changing or moving your existing data." onClose={onClose}><form onSubmit={secureEmail}><label>Email address<input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com"/></label><p className="account-note">Your current budgets stay attached to this account. After verification, PocketPlan will ask you to create a password.</p>{message && <div className="auth-message account-message">{message}</div>}<button className="primary submit" disabled={busy}>{busy ? 'Sending…' : 'Send verification email'}</button></form></ModalFrame>
+
+  if (needsPassword) return <ModalFrame title="Create your password" subtitle={`Your email ${session.user.email} is verified.`} onClose={onClose}><form onSubmit={savePassword}><label>New password<input required minLength={8} type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="At least 8 characters"/></label>{message && <div className="auth-message account-message">{message}</div>}<button className="primary submit" disabled={busy}>{busy ? 'Saving…' : 'Save password'}</button></form></ModalFrame>
+
+  return <ModalFrame title="Your account" subtitle="Your browser keeps this session active automatically." onClose={onClose}><div className="account-summary"><b>{session.user.email}</b><span>Protected account</span></div><form onSubmit={savePassword}><label>Change password<input required minLength={8} type="password" autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="New password"/></label>{message && <div className="auth-message account-message">{message}</div>}<button className="primary submit" disabled={busy}>{busy ? 'Saving…' : 'Update password'}</button><button className="auth-signout" type="button" onClick={() => supabase?.auth.signOut({ scope: 'local' })}>Sign out on this device</button></form></ModalFrame>
 }
 
 function NavButton({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
