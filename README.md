@@ -4,8 +4,8 @@ A mobile-first monthly salary budgeting and expense tracker. Budget allocations 
 
 ## Local setup
 
-1. Create a Supabase project and run `supabase/migrations/202607200001_initial_schema.sql` in the SQL editor.
-2. Copy `.env.example` to `.env` and add the project URL and anon key.
+1. Start a Supabase-compatible backend and apply every SQL file in `supabase/migrations` in filename order.
+2. Copy `.env.example` to `.env` and add the API URL and anon key.
 3. Enable your preferred authentication provider in Supabase Authentication.
 4. Run `npm install` and `npm run dev`.
 
@@ -21,6 +21,15 @@ joins the shared `proxy` network for Caddy.
 `deployment/Caddyfile.vps` contains the VPS routes. The sslip.io hostname works
 without a DNS change; the custom hostname becomes active once its DNS record
 points to the VPS.
+
+The production backend is a separate self-hosted Supabase Compose project.
+`deployment/supabase-local.override.yml` gives its containers unique names,
+removes direct host ports, and exposes only Kong to the shared Caddy network.
+Keep the generated backend `.env` on the VPS; never commit it.
+
+`deployment/backup-supabase.sh` creates verified database and receipt-file
+archives. Production runs it nightly under `flock` and retains 30 days of
+backups in `/home/ali/backups/pocketplan`.
 
 GitHub Pages continues to build with `/pocketplan/` as its base path. VPS builds
 set `VITE_BASE_PATH=/` automatically.

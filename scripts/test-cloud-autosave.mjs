@@ -7,6 +7,7 @@ const admin = createClient(POCKETPLAN_SUPABASE_URL, POCKETPLAN_SERVICE_KEY, { au
 const testEmail = `pocketplan-test-${Date.now()}@example.com`
 const testPassword = `PocketPlan-${crypto.randomUUID()}!`
 let testUserId
+let receiptPath
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message)
@@ -55,6 +56,25 @@ try {
   const { count } = await browser.from('budget_allocations').select('id', { count: 'exact', head: true }).eq('id', disposable.id)
   assert(count === 0, 'Allocation delete autosave failed')
 
+  receiptPath = `${testUserId}/${crypto.randomUUID()}.jpg`
+  const { error: uploadError } = await browser.storage
+    .from('receipts')
+    .upload(receiptPath, new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], { type: 'image/jpeg' }), { contentType: 'image/jpeg' })
+  if (uploadError) throw uploadError
+  const { error: expenseError } = await browser.from('expenses').insert({
+    user_id: testUserId,
+    budget_month_id: month.id,
+    merchant: 'Migration test',
+    category: 'Other',
+    amount: 1,
+    spent_at: '2026-08-01',
+    receipt_path: receiptPath,
+  })
+  if (expenseError) throw expenseError
+  const { data: signedReceipt, error: signedReceiptError } = await browser.storage.from('receipts').createSignedUrl(receiptPath, 60)
+  if (signedReceiptError) throw signedReceiptError
+  assert(Boolean(signedReceipt.signedUrl), 'Private receipt signed URL failed')
+
   const { error: finalizeError } = await browser.from('budget_months').update({ is_finalized: true, finalized_at: new Date().toISOString() }).eq('id', month.id)
   if (finalizeError) throw finalizeError
   const { error: lockedEditError } = await browser.from('budget_allocations').update({ amount: 230 }).eq('id', allocation.id)
@@ -62,7 +82,8 @@ try {
   const { error: lockedInsertError } = await browser.from('budget_allocations').insert({ user_id: testUserId, budget_month_id: month.id, category: 'Late change', amount: 5, label: 'Bill' })
   assert(Boolean(lockedInsertError), 'Finalized month accepted a new allocation')
 
-  console.log('Cloud autosave E2E passed: salary, label add/edit, Pending/Budgeted/Paid status, combined filter, negative adjustment, delete, finalize lock.')
+  console.log('Autosave E2E passed: salary, labels, Pending/Budgeted/Paid, filters, adjustment, delete, private receipt, and finalize lock.')
 } finally {
+  if (receiptPath) await admin.storage.from('receipts').remove([receiptPath])
   if (testUserId) await admin.auth.admin.deleteUser(testUserId)
 }

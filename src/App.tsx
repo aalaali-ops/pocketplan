@@ -49,7 +49,14 @@ function App() {
       setAuthLoading(false)
     }
     openSession()
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => { setSession(nextSession); setAuthLoading(false) })
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY' && nextSession?.user.email) {
+        localStorage.setItem('pocketplan-password-pending', nextSession.user.email)
+        setAccountOpen(true)
+      }
+      setSession(nextSession)
+      setAuthLoading(false)
+    })
     return () => data.subscription.unsubscribe()
   }, [])
 
@@ -251,20 +258,39 @@ function SaveIndicator({ state, error, onRetry }: { state: SaveState; error: str
 }
 
 function LoginScreen() {
+  const [recovering, setRecovering] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
+  const [sent, setSent] = useState(false)
   const [busy, setBusy] = useState(false)
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!supabase) return
     setBusy(true)
     setMessage('')
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setMessage(error.message)
+    setSent(false)
+    if (recovering) {
+      const redirectTo = new URL(import.meta.env.BASE_URL, window.location.origin).toString()
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+      if (error) setMessage(error.message)
+      else {
+        setMessage('Password reset email sent. Open its link on this device to choose a new password.')
+        setSent(true)
+      }
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) setMessage(error.message)
+    }
     setBusy(false)
   }
-  return <div className="auth-page"><div className="auth-card"><div className="brand auth-brand"><div className="brand-mark"><WalletCards/></div><span>PocketPlan</span></div><h1>Welcome back</h1><p>Sign in with your PocketPlan account. New account registration is closed.</p><form onSubmit={submit}><label>Email<input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)}/></label><label>Password<input required minLength={8} type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)}/></label>{message && <div className="auth-message">{message}</div>}<button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button></form></div></div>
+  const switchMode = () => {
+    setRecovering(current => !current)
+    setPassword('')
+    setMessage('')
+    setSent(false)
+  }
+  return <div className="auth-page"><div className="auth-card"><div className="brand auth-brand"><div className="brand-mark"><WalletCards/></div><span>PocketPlan</span></div><h1>{recovering ? 'Reset your password' : 'Welcome back'}</h1><p>{recovering ? 'We will email you a secure link to choose a new password.' : 'Sign in with your PocketPlan account. New account registration is closed.'}</p><form onSubmit={submit}><label>Email<input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)}/></label>{!recovering && <label>Password<input required minLength={8} type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)}/></label>}{message && <div className={`auth-message${sent ? ' account-message' : ''}`}>{message}</div>}<button className="primary" disabled={busy || sent}>{busy ? (recovering ? 'Sending…' : 'Signing in…') : sent ? 'Check your email' : recovering ? 'Send reset link' : 'Sign in'}</button></form><button className="auth-switch" type="button" onClick={switchMode}>{recovering ? 'Back to sign in' : 'Forgot password?'}</button></div></div>
 }
 
 function AccountModal({ session, onClose }: { session: Session; onClose: () => void }) {
@@ -280,7 +306,7 @@ function AccountModal({ session, onClose }: { session: Session; onClose: () => v
     if (!supabase) return
     setBusy(true)
     setMessage('')
-    const redirect = `${window.location.origin}/pocketplan/`
+    const redirect = new URL(import.meta.env.BASE_URL, window.location.origin).toString()
     const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: redirect })
     if (error) setMessage(error.message)
     else {

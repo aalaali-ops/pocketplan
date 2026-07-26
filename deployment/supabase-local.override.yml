@@ -1,0 +1,49 @@
+name: pocketplan-supabase
+
+services:
+  studio:
+    container_name: pocketplan-supabase-studio
+
+  kong:
+    container_name: pocketplan-supabase-kong
+    ports: !reset []
+    networks:
+      default:
+        aliases:
+          - api-gw
+      proxy:
+        aliases:
+          - pocketplan-supabase-api
+
+  auth:
+    container_name: pocketplan-supabase-auth
+
+  rest:
+    container_name: pocketplan-supabase-rest
+
+  realtime:
+    container_name: pocketplan-supabase-realtime
+
+  storage:
+    container_name: pocketplan-supabase-storage
+
+  imgproxy:
+    container_name: pocketplan-supabase-imgproxy
+
+  meta:
+    container_name: pocketplan-supabase-meta
+
+  functions:
+    container_name: pocketplan-supabase-functions
+
+  db:
+    container_name: pocketplan-supabase-db
+
+  supavisor:
+    container_name: pocketplan-supabase-pooler
+    ports: !reset []
+
+networks:
+  proxy:
+    external: true
+    name: proxy
