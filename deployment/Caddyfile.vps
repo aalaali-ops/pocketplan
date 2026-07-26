@@ -1,0 +1,11 @@
+pocketplan.169-58-75-68.sslip.io {
+	encode zstd gzip
+	reverse_proxy pocketplan:8080
+}
+
+# Enable after pocketplan.alibgproject.xyz points to the VPS:
+#
+# pocketplan.alibgproject.xyz {
+# 	encode zstd gzip
+# 	reverse_proxy pocketplan:8080
+# }

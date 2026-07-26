@@ -11,9 +11,19 @@ A mobile-first monthly salary budgeting and expense tracker. Budget allocations 
 
 Without environment variables, the app opens with realistic demo data so the interface can be reviewed immediately.
 
-## Deploy to Netlify
+## Deploy to the VPS
 
-Connect this repository, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Netlify environment variables, and deploy. `netlify.toml` supplies the build command, output directory, and single-page-app redirect.
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.production`,
+then run `docker compose --env-file .env.production -f compose.vps.yaml up -d
+--build`. The container serves the static SPA through unprivileged Nginx and
+joins the shared `proxy` network for Caddy.
+
+`deployment/Caddyfile.vps` contains the VPS routes. The sslip.io hostname works
+without a DNS change; the custom hostname becomes active once its DNS record
+points to the VPS.
+
+GitHub Pages continues to build with `/pocketplan/` as its base path. VPS builds
+set `VITE_BASE_PATH=/` automatically.
 
 ## Data security
 

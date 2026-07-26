@@ -1,0 +1,25 @@
+name: pocketplan
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_BASE_PATH: /
+    image: pocketplan:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3200:8080"
+    networks:
+      default: {}
+      proxy:
+        aliases:
+          - pocketplan
+
+networks:
+  proxy:
+    external: true
+    name: proxy
+
